@@ -10,7 +10,6 @@ import io
 import subprocess
 import shutil
 
-# --- 路徑設定 ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 sys.path.append(project_root)
@@ -18,6 +17,7 @@ sys.path.append(project_root)
 from common.utils import send_json, recv_json
 from common.protocol import Protocol
 
+# Host & Port -> Connect to server
 HOST = '127.0.0.1'
 PORT = 8888
 
@@ -28,6 +28,8 @@ class LobbyClient:
         self.user_token = None 
         self.username = None
         self.msg_queue = queue.Queue()
+        self.current_room_id = None
+
 
     def connect(self):
         try:
@@ -150,25 +152,36 @@ class LobbyClient:
             print("   (大廳已暫停，關閉遊戲視窗後返回。)")
             print("="*50 + "\n")
             
-            process.wait() # <--- 程式會卡在這裡，直到遊戲視窗關閉
-            
+            process.wait() 
             print("\n✅ 遊戲結束，返回大廳...\n")
-            
+            self.send_leave_room()
+
         except Exception as e:
             print(f"❌ 啟動失敗: {e}")
+
+    def send_leave_room(self):
+        if not self.current_room_id: return
+        
+        print(f"正在請求離開房間 {self.current_room_id}...")
+        # 注意：請確認 common/protocol.py 裡有加 CMD_LEAVE_ROOM = "LEAVE_ROOM"
+        req = {"cmd": Protocol.CMD_LEAVE_ROOM, "room_id": self.current_room_id}
+        send_json(self.sock, req)
+        
+        # 等待 Server 確認 (非必要但比較保險)
+        self.get_response(timeout=2)
+        
+        self.current_room_id = None # 清空紀錄
 
     def check_and_update_game(self, game_id, game_name, server_version):
         """自動檢查版本並決定是否下載"""
         self.download_game_silently(game_id, game_name, server_version)
 
+
+    # This function aims to update game is user doesn't update
     def download_game_silently(self, game_id, game_name, server_version=None):
-        """
-        背景下載遊戲 (包含版本檢查與移除舊檔)
-        """
         base_download_path = os.path.join(current_dir, "downloads", self.username, game_name)
         config_path = os.path.join(base_download_path, "game_config.json")
 
-        # 防止重複下載
         if server_version and os.path.exists(config_path):
             try:
                 with open(config_path, 'r') as f:
@@ -185,7 +198,6 @@ class LobbyClient:
         else:
             print(f"⬇ 正在下載 {game_name}...")
 
-        # 開始下載流程
         req = {"cmd": Protocol.CMD_DOWNLOAD_GAME, "game_id": str(game_id)}
         send_json(self.sock, req)
         
@@ -193,18 +205,15 @@ class LobbyClient:
         if res and res.get("status") == "OK":
             try:
                 b64_data = res.get("file_data")
-                # 優先使用 Server 回傳的正確名稱
                 final_game_name = res.get("game_name", game_name) 
                 final_path = os.path.join(current_dir, "downloads", self.username, final_game_name)
 
-                # 清理舊版本
                 if os.path.exists(final_path):
                     try:
                         shutil.rmtree(final_path)
                     except:
                         pass 
                 
-                # 建立新資料夾
                 os.makedirs(final_path, exist_ok=True)
                 
                 with zipfile.ZipFile(io.BytesIO(base64.b64decode(b64_data))) as zf:
@@ -224,7 +233,8 @@ class LobbyClient:
             return res.get("games", [])
         return None
 
-    # ================= Actions =================
+    # ====================== Stuffffffff ==================================
+    # basic actions
 
     def do_register(self):
         u = input("帳號: ")
@@ -246,6 +256,9 @@ class LobbyClient:
         else:
             print(f"登入失敗: {res.get('message') if res else 'Timeout'}")
 
+
+    # P1 - list games
+
     def do_list_games(self):
         print("\n--- 遊戲列表 ---")
         games = self._fetch_game_list()
@@ -256,6 +269,9 @@ class LobbyClient:
                 print(f"{g['id']:<5} {g['name']:<15} {g['version']:<10} {g['author']:<10} {g['description']}")
         else:
             print("目前沒有遊戲上架。")
+
+
+    # P2 - download
 
     def do_download_game_optimized(self):
         print("\n--- 下載遊戲 ---")
@@ -281,15 +297,32 @@ class LobbyClient:
 
         self.download_game_silently(gid_str, target_game['name'], target_game['version'])
 
+    # P4 - review & comment
+
     def do_review_game(self):
         print("\n--- 評分與評論 ---")
-        self.do_list_games()
+        # 1. 先取得遊戲列表
+        games = self._fetch_game_list()
+        
+        # ★★★ 修正邏輯：如果沒遊戲，直接結束函式 ★★★
+        if not games:
+            print("❌ 目前沒有任何遊戲上架，無法評論。")
+            return 
+
+        # 2. 顯示列表給使用者看
+        print(f"{'ID':<5} {'Name':<15} {'Version':<10}")
+        print("-" * 40)
+        for g in games:
+            print(f"{g['id']:<5} {g['name']:<15} {g['version']:<10}")
+
+        # 3. 正常流程
         gid = input("輸入遊戲 ID 評論: ").strip()
         if not gid: return
         try:
             rating = int(input("評分 (1-5): ").strip())
         except: return
         comment = input("留言 (選填): ").strip()
+        
         req = {"cmd": Protocol.CMD_REVIEW_GAME, "game_id": gid, "rating": rating, "comment": comment}
         send_json(self.sock, req)
         res = self.get_response()
@@ -297,7 +330,20 @@ class LobbyClient:
 
     def do_view_details(self):
         print("\n--- 遊戲詳情 ---")
-        self.do_list_games()
+        # 1. 先取得遊戲列表
+        games = self._fetch_game_list()
+        
+        # ★★★ 修正邏輯：如果沒遊戲，直接結束函式 ★★★
+        if not games:
+            print("❌ 目前沒有任何遊戲上架。")
+            return
+
+        # 2. 顯示列表
+        print(f"{'ID':<5} {'Name':<15}")
+        for g in games:
+            print(f"{g['id']:<5} {g['name']:<15}")
+
+        # 3. 正常流程
         gid = input("輸入遊戲 ID 查看: ").strip()
         if not gid: return
         send_json(self.sock, {"cmd": Protocol.CMD_GET_REVIEWS, "game_id": gid})
@@ -309,6 +355,9 @@ class LobbyClient:
                 print(f"[{r['date']}] {r['player']}: {r['rating']}★ {r['comment']}")
         else:
             print("讀取失敗。")
+
+
+    # P3 - create & join room
 
     def do_create_room(self):
         print("\n--- 建立房間 ---")
@@ -337,6 +386,7 @@ class LobbyClient:
         if res and res.get("status") == "OK":
             print(f"✅ 房間已建立! ID: {res['room_id']}, Port: {res['port']}")
             
+            self.current_room_id = res['room_id']
             server_ver = res.get("game_version", "1.0")
             self.check_and_update_game(gid_str, res['game_name'], server_ver)
             
@@ -370,12 +420,16 @@ class LobbyClient:
         if res and res.get("status") == "OK":
             print("✅ 加入成功!")
             
+            self.current_room_id = rid
             server_ver = res.get("game_version", "1.0")
             self.check_and_update_game(res['game_id'], res['game_name'], server_ver)
             
             self.launch_game(res['game_name'], HOST, res['port'])
         else:
              print(f"❌ 加入失敗: {res.get('message') if res else 'Timeout'}")
+
+
+
 
 if __name__ == "__main__":
     client = LobbyClient()

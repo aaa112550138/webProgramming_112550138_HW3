@@ -5,11 +5,8 @@ import sys
 import os
 
 # --- 路徑設定 ---
-# 取得目前檔案所在目錄 (server/)
 current_dir = os.path.dirname(os.path.abspath(__file__))
-# 取得專案根目錄 (Final_Project/)
 project_root = os.path.dirname(current_dir)
-# 將專案根目錄加入 sys.path，這樣才能 import common
 sys.path.append(project_root)
 
 from common.utils import send_json, recv_json
@@ -21,12 +18,13 @@ from server.services import store
 from server.services import lobby
 from server.services.db import db_instance
 
+
+# server Host & Port (will be on linux)
 HOST = '0.0.0.0'
 PORT = 8888
 
-# ★★★ 線上使用者追蹤 ★★★
-# 結構: { "username:role": ("ip", port) }
-# 用於防止重複登入
+
+
 online_users = {}
 online_lock = threading.Lock()
 
@@ -39,7 +37,8 @@ def handle_client(conn, addr):
     # 用來儲存當前連線的使用者狀態 (Session)
     current_user = None 
     user_key = None # 用來在斷線時快速找到並移除紀錄
-    
+    current_room_id = None # ★★★ 新增：記錄這個連線目前在哪個房間 ★★★
+
     try:
         while True:
             # 1. 接收請求
@@ -99,7 +98,7 @@ def handle_client(conn, addr):
                 else:
                     response = auth_resp
 
-            # ==================== Store (商城 - 開發者端) ====================
+            # ==================== Store (D1 ~ D3) ====================
             elif cmd == Protocol.CMD_UPLOAD_GAME:
                 if not current_user or current_user["role"] != "dev":
                     response = {"status": Protocol.STATUS_ERROR, "message": "Permission denied."}
@@ -124,7 +123,7 @@ def handle_client(conn, addr):
                 else:
                     response = store.handle_unpublish_game(request, current_user["id"])
 
-            # ==================== Store (商城 - 玩家端) ====================
+            # ==================== Store (U1, U2) ====================
             elif cmd == Protocol.CMD_LIST_GAMES:
                 if not current_user:
                      response = {"status": Protocol.STATUS_ERROR, "message": "Please login first."}
@@ -137,13 +136,16 @@ def handle_client(conn, addr):
                 else:
                     response = store.handle_download_game(request)
 
-            # ==================== Lobby (大廳 / 房間) ====================
+            # ==================== Lobby (U3) ====================
             elif cmd == Protocol.CMD_CREATE_ROOM:
                 if not current_user:
                     response = {"status": Protocol.STATUS_ERROR, "message": "Login first."}
                 else:
                     gid = request.get("game_id")
                     response = lobby.handle_create_room(current_user["id"], current_user["username"], gid)
+                    # ★★★ 如果建立成功，記錄 Room ID
+                    if response["status"] == Protocol.STATUS_OK:
+                        current_room_id = response["room_id"]
 
             elif cmd == Protocol.CMD_LIST_ROOMS:
                 response = lobby.handle_list_rooms()
@@ -153,10 +155,22 @@ def handle_client(conn, addr):
                     response = {"status": Protocol.STATUS_ERROR, "message": "Login first."}
                 else:
                     rid = request.get("room_id")
-                    # ★★★ 這裡傳入了 user_id，修復了之前崩潰的問題 ★★★
                     response = lobby.handle_join_room(rid, current_user["id"], current_user["username"])
+                    # ★★★ 如果加入成功，記錄 Room ID
+                    if response["status"] == Protocol.STATUS_OK:
+                        current_room_id = rid
 
-            # ==================== Social / Reviews ====================
+            elif cmd == Protocol.CMD_LEAVE_ROOM:
+                if not current_user:
+                    response = {"status": Protocol.STATUS_ERROR, "message": "Login first."}
+                else:
+                    rid = request.get("room_id")
+                    response = lobby.handle_leave_room(rid, current_user["username"])
+                    if response["status"] == Protocol.STATUS_OK:
+                        current_room_id = None # 清除紀錄
+
+
+            # ==================== LOBBY(U4) ====================
             elif cmd == Protocol.CMD_REVIEW_GAME:
                 if not current_user or current_user["role"] != "player":
                     response = {"status": Protocol.STATUS_ERROR, "message": "Permission denied."}
@@ -164,7 +178,6 @@ def handle_client(conn, addr):
                     response = store.handle_review_game(request, current_user["id"])
 
             elif cmd == Protocol.CMD_GET_REVIEWS:
-                # 讀取評論不需要登入，或是看你設計
                 response = store.handle_get_reviews(request)
             
             # ==================== Default ====================

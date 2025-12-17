@@ -16,6 +16,8 @@ sys.path.append(project_root)
 from common.utils import send_json, recv_json
 from common.protocol import Protocol
 
+
+# Host & Port -> connects to server
 HOST = '127.0.0.1'
 PORT = 8888
 
@@ -58,6 +60,7 @@ class DeveloperClient:
         finally: 
             if self.sock: self.sock.close()
 
+    # Basic func
     def login_menu(self):
         print("\n=== Dev Auth ===")
         print("1. Login\n2. Register\n3. Exit")
@@ -90,6 +93,7 @@ class DeveloperClient:
             self.username = res["username"]
         else: print(f"Login Failed: {res.get('message') if res else 'Timeout'}")
 
+    # D1: upload games
     def _package_and_send(self, cmd_type):
         base = os.path.join(current_dir, "my_games_source")
         if not os.path.exists(base): os.makedirs(base)
@@ -128,6 +132,7 @@ class DeveloperClient:
     def do_upload_game(self): self._package_and_send(Protocol.CMD_UPLOAD_GAME)
     def do_update_game(self): self._package_and_send(Protocol.CMD_UPDATE_GAME)
 
+    # D2: unpublish games
     def do_list_and_manage_games(self):
         send_json(self.sock, {"cmd": Protocol.CMD_LIST_MY_GAMES})
         res = self.get_response()

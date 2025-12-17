@@ -187,3 +187,39 @@ def handle_join_room(room_id, user_id, username):
             "game_id": room["game_id"],
             "game_version": room.get("version", "1.0") 
         }
+
+def handle_leave_room(room_id, username):
+    """處理玩家離開房間：若房間沒人則關閉 Server"""
+    with lock:
+        if room_id not in rooms:
+            return {"status": Protocol.STATUS_ERROR, "message": "Room not found."}
+        
+        room = rooms[room_id]
+        
+        # 1. 從玩家名單移除
+        if username in room["players"]:
+            room["players"].remove(username)
+            print(f"[Lobby] Player {username} left room {room_id}")
+        else:
+            return {"status": Protocol.STATUS_ERROR, "message": "Player not in room."}
+
+        # 2. 檢查房間是否空了
+        if len(room["players"]) == 0:
+            print(f"[Lobby] Room {room_id} is empty. Shutting down Game Server...")
+            
+            # 殺死 Game Server Process
+            try:
+                if room["process"]:
+                    room["process"].terminate()
+                    # room["process"].wait() 
+            except Exception as e:
+                print(f"[Lobby Error] Killing process failed: {e}")
+            
+            # 刪除房間資料
+            del rooms[room_id]
+            msg = "Room closed (empty)."
+        else:
+            msg = f"Left room. {len(room['players'])} players remaining."
+            print(f"[Lobby] {msg}")
+
+        return {"status": Protocol.STATUS_OK, "message": msg}
