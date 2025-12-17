@@ -1,0 +1,27 @@
+class Protocol:
+    STATUS_OK = "OK"
+    STATUS_ERROR = "ERROR"
+    
+    # Auth
+    CMD_REGISTER = "REGISTER"
+    CMD_LOGIN_DEV = "LOGIN_DEV"
+    CMD_LOGIN_PLAYER = "LOGIN_PLAYER"
+    
+    # Store (Developer)
+    CMD_UPLOAD_GAME = "UPLOAD_GAME"
+    CMD_UPDATE_GAME = "UPDATE_GAME"
+    CMD_LIST_MY_GAMES = "LIST_MY_GAMES"
+    CMD_UNPUBLISH_GAME = "UNPUBLISH_GAME"
+    
+    # Store (Player)
+    CMD_LIST_GAMES = "LIST_GAMES"
+    CMD_DOWNLOAD_GAME = "DOWNLOAD_GAME"
+    
+    # Lobby
+    CMD_CREATE_ROOM = "CREATE_ROOM"
+    CMD_LIST_ROOMS = "LIST_ROOMS"
+    CMD_JOIN_ROOM = "JOIN_ROOM"
+
+    # Social / Reviews
+    CMD_REVIEW_GAME = "REVIEW_GAME"
+    CMD_GET_REVIEWS = "GET_REVIEWS"
