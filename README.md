@@ -8,28 +8,27 @@
 * pip install -r requirements.txt to install the environment (pygame)
 
 ## File structure
-client_dev/
+* client_dev/
     - my_game_sources
-    client.py
-    server.py
-client_player/
+    - client.py
+    - server.py
+* client_player/
     - downloads/ 
-    lobby_client.py
-    main.py
-common/
-    protocol.py
-    utils.py
-server/ 
-    services/
-        auth.py
-        db.py
-        lobby.py
-        store.py
-    storage/
-    main.py
-
-requirements.txt
-reset_env.py
+    - lobby_client.py
+    - main.py
+* common/
+    - protocol.py
+    - utils.py
+* server/ 
+    - services/
+        * auth.py
+        * db.py
+        * lobby.py
+        * store.py
+    - storage/
+    - main.py
+* requirements.txt
+* reset_env.py
 
 
 ## IP & PORT
