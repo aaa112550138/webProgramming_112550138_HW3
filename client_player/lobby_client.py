@@ -18,8 +18,8 @@ from common.utils import send_json, recv_json
 from common.protocol import Protocol
 
 # Host & Port -> Connect to server
-HOST = '127.0.0.1'
-PORT = 8888
+HOST = '140.113.17.11'
+PORT = 30800
 
 class LobbyClient:
     def __init__(self):

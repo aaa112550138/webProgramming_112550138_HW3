@@ -15,8 +15,8 @@ room_id_counter = 1
 lock = threading.Lock()
 
 # 設定遊戲 Server 的 Port 範圍
-PORT_RANGE_START = 9000
-PORT_RANGE_END = 9100
+PORT_RANGE_START = 21050
+PORT_RANGE_END = 21150
 
 def find_free_port():
     """尋找一個沒被佔用的 Port"""
@@ -67,7 +67,6 @@ def handle_create_room(user_id, username, game_id):
     # 2. 準備路徑
     # project_root/server/
     server_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    # ZIP 檔位置: project_root/server/storage/games/Snake_1.1.zip
     zip_path = os.path.join(server_dir, "storage", "games", file_rel_path)
     
     # 執行區位置: project_root/server/running_games/Snake_1.1/

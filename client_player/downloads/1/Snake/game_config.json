@@ -1,7 +1,0 @@
-{
-    "game_name": "Snake",
-    "version": "3.2",
-    "description": "經典貪吃蛇",
-    "exe_cmd": "python client.py -ip {ip} -p {port}",
-    "server_cmd": "python server.py -p {port}"
-}

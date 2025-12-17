@@ -8,6 +8,7 @@ import queue
 import json
 import shutil
 import base64
+import zipfile 
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir) 
@@ -18,8 +19,8 @@ from common.protocol import Protocol
 
 
 # Host & Port -> connects to server
-HOST = '127.0.0.1'
-PORT = 8888
+HOST = '140.113.17.11'
+PORT = 30800
 
 class DeveloperClient:
     def __init__(self):
@@ -95,39 +96,135 @@ class DeveloperClient:
 
     # D1: upload games
     def _package_and_send(self, cmd_type):
-        base = os.path.join(current_dir, "my_games_source")
-        if not os.path.exists(base): os.makedirs(base)
-        games = [d for d in os.listdir(base) if os.path.isdir(os.path.join(base, d))]
-        if not games: 
-            print("No games found.")
+        """
+        [核心邏輯] 處理檔案選取、過濾打包、並發送指定指令 (Upload 或 Update)
+        修正版：排除垃圾檔案 + 增加 Timeout
+        """
+        # 設定原始碼存放目錄
+        base_source_dir = os.path.join(current_dir, "my_games_source")
+        
+        if not os.path.exists(base_source_dir):
+            os.makedirs(base_source_dir)
+            print(f"[Info] Created directory: {base_source_dir}")
+            print("Please put your game folders inside this directory.")
             return
 
-        for i, g in enumerate(games): print(f"{i+1}. {g}")
+        # 掃描目錄下的資料夾
+        games = [d for d in os.listdir(base_source_dir) if os.path.isdir(os.path.join(base_source_dir, d))]
+        
+        if not games:
+            print(f"No game folders found in {base_source_dir}.")
+            return
+
+        # 列出選項
+        print("Available Game Folders:")
+        for idx, g in enumerate(games):
+            print(f"{idx+1}. {g}")
+        
         try:
-            sel = int(input("Select: ")) - 1
-            if sel < 0 or sel >= len(games): return
-            target = os.path.join(base, games[sel])
-        except: return
+            sel_str = input("Select game folder (number, or 0 to cancel): ")
+            sel = int(sel_str) - 1
+            if sel == -1: return
+            if sel < 0 or sel >= len(games):
+                print("Invalid selection.")
+                return 
+            target_folder_name = games[sel]
+            target_folder_path = os.path.join(base_source_dir, target_folder_name)
+        except ValueError:
+            print("Invalid input.")
+            return
 
-        if not os.path.exists(os.path.join(target, "game_config.json")):
-            print("Missing game_config.json")
+        # 檢查 config 是否存在
+        config_path = os.path.join(target_folder_path, "game_config.json")
+        if not os.path.exists(config_path):
+            print(f"[Error] 'game_config.json' not found in {target_folder_name}!")
             return
         
-        with open(os.path.join(target, "game_config.json")) as f: config = json.load(f)
-        
-        zip_path = shutil.make_archive(os.path.join(current_dir, "temp"), 'zip', target)
-        with open(zip_path, "rb") as f: b64 = base64.b64encode(f.read()).decode()
-        os.remove(zip_path)
+        # 讀取 config
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+        except Exception as e:
+            print(f"[Error] Failed to read config: {e}")
+            return
 
-        send_json(self.sock, {
-            "cmd": cmd_type,
-            "game_name": config.get('game_name'),
-            "version": config.get('version'),
-            "description": config.get('description'),
-            "file_data": b64
-        })
-        res = self.get_response(15)
-        if res: print(res.get('message'))
+        print(f"Selected: {config.get('game_name')} (v{config.get('version')})")
+        
+        if cmd_type == Protocol.CMD_UPDATE_GAME:
+            print("⚠️  [Update Mode] Ensure you have incremented the version number in config!")
+
+        confirm = input(f"Confirm {cmd_type}? (y/n): ")
+        if confirm.lower() != 'y':
+            return
+
+        try:
+            # 1. 壓縮 (手動過濾垃圾檔案，這是解決卡住的關鍵！)
+            print("Zipping files (excluding .git, venv, __pycache__)...")
+            zip_filename = os.path.join(current_dir, "temp_upload.zip")
+            
+            # 定義要排除的目錄名
+            EXCLUDE_DIRS = {'.git', '__pycache__', 'venv', 'env', '.idea', '.vscode', 'node_modules', 'bin', 'obj'}
+            # 定義要排除的副檔名或檔名
+            EXCLUDE_FILES = {'.DS_Store', 'db.sqlite3', 'Thumbs.db'}
+            
+            with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for root, dirs, files in os.walk(target_folder_path):
+                    # 修改 dirs 列表以排除不需要的資料夾 (這樣 os.walk 就不會進去)
+                    dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
+                    
+                    for file in files:
+                        if file in EXCLUDE_FILES or file.endswith('.pyc'):
+                            continue
+                        
+                        abs_path = os.path.join(root, file)
+                        # 計算相對路徑，確保 zip 內部結構正確 (去除絕對路徑資訊)
+                        rel_path = os.path.relpath(abs_path, target_folder_path)
+                        zipf.write(abs_path, rel_path)
+            
+            # 檢查大小
+            size_mb = os.path.getsize(zip_filename) / (1024 * 1024)
+            print(f"Packed size: {size_mb:.2f} MB")
+            
+            # 如果還是太大，發出警告
+            if size_mb > 50:
+                print("⚠️  Warning: File is huge (>50MB). Upload might take a while.")
+
+            # 2. 轉 Base64
+            print("Encoding...")
+            with open(zip_filename, "rb") as f:
+                file_content = f.read()
+                b64_str = base64.b64encode(file_content).decode('utf-8')
+            
+            os.remove(zip_filename)
+
+            # 3. 發送
+            req = {
+                "cmd": cmd_type,
+                "game_name": config.get('game_name'),
+                "version": config.get('version'),
+                "description": config.get('description', 'No description'),
+                "file_data": b64_str
+            }
+            
+            print("Sending to server (please wait)...")
+            send_json(self.sock, req)
+            
+            # 4. 等待回應 (Timeout 加大到 60 秒)
+            print("Waiting for server response...")
+            res = self.get_response(timeout=10)
+            
+            if res:
+                if res.get("status") == "OK":
+                    print(f"✅ Success: {res.get('message')}")
+                else:
+                    print(f"❌ Failed: {res.get('message')}")
+            else:
+                print("❌ Error: Server timed out (check server logs or network).")
+                
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            import traceback
+            traceback.print_exc()
 
     def do_upload_game(self): self._package_and_send(Protocol.CMD_UPLOAD_GAME)
     def do_update_game(self): self._package_and_send(Protocol.CMD_UPDATE_GAME)

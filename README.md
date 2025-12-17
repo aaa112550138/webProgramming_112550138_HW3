@@ -26,9 +26,9 @@
         * lobby.py
         * store.py
     - storage/
-    - main.py
-* requirements.txt
-* reset_env.py
+    - main.py 
+* requirements.txt 
+* reset_env.py 
 
 
 ## IP & PORT

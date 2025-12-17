@@ -1,0 +1,7 @@
+{
+    "game_name": "BullsAndCows",
+    "version": "2.0",
+    "description": "1v1 回合制互猜 (PvP Mode)",
+    "exe_cmd": "python client.py -ip {ip} -p {port}",
+    "server_cmd": "python server.py -p {port}"
+}
